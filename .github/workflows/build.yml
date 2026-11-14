@@ -1,0 +1,51 @@
+# LoopFollow Android Builder build workflow, version 1
+#
+# Builds LoopFollow for Android from the official source (github.com/loopandlearn/LoopFollowAndroid),
+# signed with your key (secret KEYSTORE_SET). The build steps are in
+# github.com/loopandlearn/LoopFollowAndroid-Builder, file .github/workflows/loopfollow-builder.yml on the
+# "release" branch, maintained by Loop and Learn. This file runs the released version of those steps at
+# every build, so your repository never needs an update for them. You only replace this file when the
+# LoopFollow documentation announces it.
+# Docs and setup: https://loopfollowdocs.org/android/lf-android/
+#
+# A build runs only when you start it (Actions -> Build LoopFollow -> Run workflow).
+
+name: Build LoopFollow
+run-name: ${{ format('Build LoopFollow {0} ({1})', inputs.version, inputs.instance) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'LoopFollow version ("latest" = newest release)'
+        required: true
+        default: 'latest'
+        type: string
+      instance:
+        description: 'Which app: a second or third LoopFollow is a separate app with its own settings'
+        required: true
+        default: 'LoopFollow'
+        type: choice
+        options:
+          - LoopFollow
+          - Second
+          - Third
+      display_name:
+        description: 'Name under the app icon (empty = LoopFollow, LoopFollow_Second or LoopFollow_Third)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  loopfollow:
+    name: LoopFollow
+    uses: loopandlearn/LoopFollowAndroid-Builder/.github/workflows/loopfollow-builder.yml@release
+    with:
+      version: ${{ inputs.version }}
+      instance: ${{ inputs.instance }}
+      display_name: ${{ inputs.display_name }}
+    secrets:
+      KEYSTORE_SET: ${{ secrets.KEYSTORE_SET }}

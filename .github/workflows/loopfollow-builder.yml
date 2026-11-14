@@ -1,0 +1,229 @@
+# LoopFollow Android Builder build steps (reusable workflow), version 1
+#
+# Builds LoopFollow for Android from the official source (github.com/loopandlearn/LoopFollowAndroid),
+# signed with the user's own key (secret KEYSTORE_SET). It is not run in this repository: the short
+# build.yml in each user's private repository (a copy of this template) calls it on the "release"
+# branch, so every build uses the released version of these steps without any change in the user's
+# repository. Test a change in a private copy before moving the release branch to it.
+#
+# Docs and setup: https://loopfollowdocs.org/android/lf-android/
+# The only code this file downloads is the LoopFollow source from loopandlearn/LoopFollowAndroid and
+# GitHub's own actions (actions/setup-java, actions/upload-artifact), each pinned to one commit (tag in
+# the comment). The runner image is pinned too (ubuntu-24.04).
+#
+# Based on AAPS Builder (github.com/nightscout/aaps-builder, originally github.com/dio99/aaps-builder),
+# AGPL-3.0.
+#
+# A build runs only when the user starts it (Actions -> Build LoopFollow -> Run workflow in their
+# repository). There are no scheduled or automatic builds.
+
+name: LoopFollow Builder
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'LoopFollow version ("latest" = newest release)'
+        required: true
+        type: string
+      instance:
+        description: 'LoopFollow, Second or Third'
+        required: true
+        type: string
+      display_name:
+        description: 'Name under the app icon'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      KEYSTORE_SET:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  DOCS_PAGE: https://loopfollowdocs.org/android/lf-android/
+  SETUP_PAGE: https://loopfollowdocs.org/android/lf-android/#build-step-1
+  UPSTREAM: https://github.com/loopandlearn/LoopFollowAndroid.git
+  IN_VERSION: ${{ inputs.version }}
+  IN_INSTANCE: ${{ inputs.instance }}
+  IN_DISPLAY_NAME: ${{ inputs.display_name }}
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    env:
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_SET != '' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check repository, version and settings
+        id: check
+        run: |
+          stop() { echo "::error::$1"; exit 1; }
+
+          REPO_JSON=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY")
+          [ "$(echo "$REPO_JSON" | jq -r .is_template)" = true ] \
+            && stop "This is the LoopFollow Android Builder template. Create your own private copy with the setup steps: $SETUP_PAGE"
+          [ "$(echo "$REPO_JSON" | jq -r .private)" = true ] \
+            || stop "This repository is PUBLIC, so anyone could download your app. Make it private: Settings -> General -> Danger Zone -> Change visibility -> Private"
+          [ "$HAS_KEYSTORE" = true ] \
+            || stop "Secret KEYSTORE_SET is missing. Create it with the setup steps ($SETUP_PAGE) and add it under Settings -> Secrets and variables -> Actions."
+
+          VERSION="${IN_VERSION// /}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
+            VERSION=$(git ls-remote --tags --refs "$UPSTREAM" \
+              | awk -F/ '{print $3}' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V | tail -1)
+            [ -n "$VERSION" ] || stop "No LoopFollow for Android release was found."
+          fi
+          case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac
+          git ls-remote --exit-code --tags "$UPSTREAM" "refs/tags/$VERSION" > /dev/null \
+            || stop "Version $VERSION does not exist in loopandlearn/LoopFollowAndroid."
+
+          case "$IN_INSTANCE" in
+            LoopFollow|Second|Third) ;;
+            *) stop "Instance $IN_INSTANCE is not supported. Choose LoopFollow, Second or Third." ;;
+          esac
+          if [ -n "$IN_DISPLAY_NAME" ]; then
+            [ ${#IN_DISPLAY_NAME} -le 30 ] || stop "The display name can be at most 30 characters."
+            printf '%s' "$IN_DISPLAY_NAME" | grep -q '[[:cntrl:]<>&"]' \
+              && stop "The display name cannot contain < > & or quotes."
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build LoopFollow ${{ needs.check.outputs.version }}
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - name: Read keystore
+        env:
+          KEYSTORE_SET: ${{ secrets.KEYSTORE_SET }}
+        run: |
+          # GitHub hides the secret's value in the log as ***, so these messages must not contain
+          # text that could be the value itself (like the secret's name, if it was pasted as value).
+          HINT="Redo step 3 of the setup: open Settings -> Secrets and variables -> Actions, edit the secret and paste the long code from 'Copy secret' in the big Secret box. Help: $DOCS_PAGE"
+          VALUE=$(printf '%s' "$KEYSTORE_SET" | tr -d ' \r\n')
+          if [ ${#VALUE} -lt 200 ]; then
+            echo "::error::The secret is too short (${#VALUE} characters). It must be a very long code, not the secret's name. $HINT"
+            exit 1
+          fi
+          DECODED=$(printf '%s' "$VALUE" | base64 -d 2>/dev/null) || { echo "::error::The secret is not a valid code (incomplete or wrong text was pasted). $HINT"; exit 1; }
+          KEYSTORE_BASE64=$(printf '%s' "$DECODED" | cut -d'|' -f1)
+          KEYSTORE_PASSWORD=$(printf '%s' "$DECODED" | cut -d'|' -f2)
+          KEY_ALIAS=$(printf '%s' "$DECODED" | cut -d'|' -f3)
+          KEY_PASSWORD=$(printf '%s' "$DECODED" | cut -d'|' -f4)
+          if [ "$(printf '%s' "$DECODED" | tr -cd '|' | wc -c)" -ne 3 ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::The secret does not contain a keystore with passwords and alias. $HINT"
+            exit 1
+          fi
+          echo "::add-mask::$KEYSTORE_PASSWORD"
+          echo "::add-mask::$KEY_PASSWORD"
+          mkdir -p "$RUNNER_TEMP/keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keystore/keystore.jks"
+          {
+            echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "KEY_ALIAS=$KEY_ALIAS"
+            echo "KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate keystore and passwords
+        run: |
+          echo test > dummy.txt && zip -q dummy.jar dummy.txt
+          if ! jarsigner -keystore "$RUNNER_TEMP/keystore/keystore.jks" \
+              -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" \
+              dummy.jar "$KEY_ALIAS" > jarsigner.log 2>&1; then
+            echo "::error::Keystore, password or alias is wrong. Create KEYSTORE_SET again with the setup steps ($SETUP_PAGE)."
+            cat jarsigner.log
+            exit 1
+          fi
+          rm -f dummy.txt dummy.jar jarsigner.log
+          echo "✅ Keystore OK"
+
+      - name: Prepare build settings
+        run: |
+          APP_SUFFIX=""
+          FILE_SUFFIX=""
+          if [ "$IN_INSTANCE" != "LoopFollow" ]; then
+            APP_SUFFIX="$IN_INSTANCE"
+            FILE_SUFFIX="-$(echo "$IN_INSTANCE" | tr '[:upper:]' '[:lower:]')"
+          fi
+          {
+            echo "APP_SUFFIX=$APP_SUFFIX"
+            echo "FILE_SUFFIX=$FILE_SUFFIX"
+          } >> "$GITHUB_ENV"
+          echo "### Building LoopFollow $VERSION ($IN_INSTANCE)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download LoopFollow source
+        run: git clone --depth 1 --branch "$VERSION" "$UPSTREAM" loopfollow
+
+      - name: Set up JDK
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          java-version: 17
+          distribution: temurin
+          cache: gradle
+          cache-dependency-path: |
+            loopfollow/**/*.gradle*
+            loopfollow/**/gradle-wrapper.properties
+
+      - name: Build APK
+        working-directory: loopfollow
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
+            -Dorg.gradle.workers.max=2 \
+            -PlfAppSuffix="$APP_SUFFIX" \
+            -PlfDisplayName="$IN_DISPLAY_NAME" \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/keystore/keystore.jks" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: Collect APK
+        run: |
+          mkdir out
+          APK_NAME="loopfollow-${VERSION#v}$FILE_SUFFIX.apk"
+          mv loopfollow/app/build/outputs/apk/release/*.apk "out/$APK_NAME"
+          echo "APK_NAME=$APK_NAME" >> "$GITHUB_ENV"
+          rm -rf "$RUNNER_TEMP/keystore"
+          ls -l out
+
+      # archive: false uploads the APK itself (no zip), so the phone can install it directly.
+      - name: Upload APK (download it from this page)
+        id: apk
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: out/${{ env.APK_NAME }}
+          archive: false
+          retention-days: 14
+
+      - name: Show download link
+        env:
+          APK_URL: ${{ steps.apk.outputs.artifact-url }}
+        run: |
+          {
+            echo "> [!WARNING]"
+            echo "> **Before you install over an existing LoopFollow:** export its settings as a QR code"
+            echo "> (Menu → Settings → Import/Export) and keep the picture off the phone. An app signed with"
+            echo "> another key cannot update it: you would have to uninstall it, which removes its settings."
+            echo
+            echo "## 📱 [Download LoopFollow ${VERSION#v}]($APK_URL)"
+            echo "Open this page on your phone in the web browser (not the GitHub app), tap the link, then tap the downloaded file to install."
+            echo
+            echo "_Available for 14 days._ LoopFollow is not a medical device. Keep your other alarms until you have checked that LoopFollow alarms reach you."
+          } >> "$GITHUB_STEP_SUMMARY"
