@@ -23,7 +23,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'LoopFollow version ("latest" = newest release)'
+        description: 'LoopFollow version ("latest" = newest release, "dev" = development version)'
         required: true
         type: string
       instance:
@@ -84,9 +84,14 @@ jobs:
               | sort -V | tail -1)
             [ -n "$VERSION" ] || stop "No LoopFollow for Android release was found."
           fi
-          case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac
-          git ls-remote --exit-code --tags "$UPSTREAM" "refs/tags/$VERSION" > /dev/null \
-            || stop "Version $VERSION does not exist in loopandlearn/LoopFollowAndroid."
+          if [ "$VERSION" = "dev" ]; then
+            git ls-remote --exit-code --heads "$UPSTREAM" "refs/heads/dev" > /dev/null \
+              || stop "LoopFollow for Android has no development version right now."
+          else
+            case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac
+            git ls-remote --exit-code --tags "$UPSTREAM" "refs/tags/$VERSION" > /dev/null \
+              || stop "Version $VERSION does not exist in loopandlearn/LoopFollowAndroid."
+          fi
 
           case "$IN_INSTANCE" in
             LoopFollow|Second|Third) ;;
