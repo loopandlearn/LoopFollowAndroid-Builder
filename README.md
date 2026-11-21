@@ -27,8 +27,8 @@ These links always open **this** repository, whatever you named it:
 
 > **On a phone, use the web browser (Chrome), not the GitHub app.** The app cannot download your builds.
 
-**New LoopFollow version?** Press **Build LoopFollow** → **Run workflow** again. `latest` always builds the newest
-release. Your repository never builds anything by itself.
+**New LoopFollow version?** Press **Build LoopFollow** → **Run workflow** again. `main` builds the released version,
+`dev` the development version for testing. Your repository never builds anything by itself.
 
 **Following more than one person?** Choose `Second` or `Third` under **Which app**. Each is a separate app with its own
 settings, next to the first one. Use the same key for all of them.
