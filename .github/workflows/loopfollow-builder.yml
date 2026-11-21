@@ -23,7 +23,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'LoopFollow version ("latest" = newest release, "dev" = development version)'
+        description: 'LoopFollow branch ("main" or "dev") or a version tag such as v8.0.9'
         required: true
         type: string
       instance:
@@ -77,16 +77,10 @@ jobs:
             || stop "Secret KEYSTORE_SET is missing. Create it with the setup steps ($SETUP_PAGE) and add it under Settings -> Secrets and variables -> Actions."
 
           VERSION="${IN_VERSION// /}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
-            VERSION=$(git ls-remote --tags --refs "$UPSTREAM" \
-              | awk -F/ '{print $3}' \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-              | sort -V | tail -1)
-            [ -n "$VERSION" ] || stop "No LoopFollow for Android release was found."
-          fi
-          if [ "$VERSION" = "dev" ]; then
-            git ls-remote --exit-code --heads "$UPSTREAM" "refs/heads/dev" > /dev/null \
-              || stop "LoopFollow for Android has no development version right now."
+          case "$VERSION" in ""|latest) VERSION=main ;; esac
+          if [ "$VERSION" = "main" ] || [ "$VERSION" = "dev" ]; then
+            git ls-remote --exit-code --heads "$UPSTREAM" "refs/heads/$VERSION" > /dev/null \
+              || stop "LoopFollow for Android has no $VERSION branch right now."
           else
             case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac
             git ls-remote --exit-code --tags "$UPSTREAM" "refs/tags/$VERSION" > /dev/null \
@@ -173,7 +167,13 @@ jobs:
           echo "### Building LoopFollow $VERSION ($IN_INSTANCE)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Download LoopFollow source
-        run: git clone --depth 1 --branch "$VERSION" "$UPSTREAM" loopfollow
+        run: |
+          git clone --depth 1 --branch "$VERSION" "$UPSTREAM" loopfollow
+          APP_VERSION=$(sed -n 's/^val lfVersion = "\(.*\)"$/\1/p' loopfollow/app/build.gradle.kts)
+          [ -n "$APP_VERSION" ] || APP_VERSION="${VERSION#v}"
+          if [ "$VERSION" = "dev" ]; then APP_VERSION="$APP_VERSION-dev"; fi
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "Version: $APP_VERSION" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up JDK
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
@@ -202,7 +202,7 @@ jobs:
       - name: Collect APK
         run: |
           mkdir out
-          APK_NAME="loopfollow-${VERSION#v}$FILE_SUFFIX.apk"
+          APK_NAME="loopfollow-$APP_VERSION$FILE_SUFFIX.apk"
           mv loopfollow/app/build/outputs/apk/release/*.apk "out/$APK_NAME"
           echo "APK_NAME=$APK_NAME" >> "$GITHUB_ENV"
           rm -rf "$RUNNER_TEMP/keystore"
@@ -227,7 +227,7 @@ jobs:
             echo "> (Menu → Settings → Import/Export) and keep the picture off the phone. An app signed with"
             echo "> another key cannot update it: you would have to uninstall it, which removes its settings."
             echo
-            echo "## 📱 [Download LoopFollow ${VERSION#v}]($APK_URL)"
+            echo "## 📱 [Download LoopFollow $APP_VERSION]($APK_URL)"
             echo "Open this page on your phone in the web browser (not the GitHub app), tap the link, then tap the downloaded file to install."
             echo
             echo "_Available for 14 days._ LoopFollow is not a medical device. Keep your other alarms until you have checked that LoopFollow alarms reach you."

@@ -17,10 +17,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'LoopFollow version ("latest" = newest release, "dev" = development version)'
+        description: 'Which LoopFollow: "main" = released version, "dev" = development version for testing'
         required: true
-        default: 'latest'
-        type: string
+        default: 'main'
+        type: choice
+        options:
+          - main
+          - dev
       instance:
         description: 'Which app: a second or third LoopFollow is a separate app with its own settings'
         required: true
