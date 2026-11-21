@@ -230,5 +230,5 @@ jobs:
             echo "## 📱 [Download LoopFollow $APP_VERSION]($APK_URL)"
             echo "Open this page on your phone in the web browser (not the GitHub app), tap the link, then tap the downloaded file to install."
             echo
-            echo "_Available for 14 days._ LoopFollow is not a medical device. Keep your other alarms until you have checked that LoopFollow alarms reach you."
+            echo "_Available for 14 days._ LoopFollow is not a medical device. Its alarms are an extra layer, not your main alarm: make sure other alarms are set up, for example in the CGM app or the loop app."
           } >> "$GITHUB_STEP_SUMMARY"
