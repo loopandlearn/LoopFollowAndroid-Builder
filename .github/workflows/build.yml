@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'LoopFollow version ("latest" = newest release)'
+        description: 'LoopFollow version ("latest" = newest release, "dev" = development version)'
         required: true
         default: 'latest'
         type: string
