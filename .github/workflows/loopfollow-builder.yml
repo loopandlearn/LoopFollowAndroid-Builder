@@ -222,11 +222,6 @@ jobs:
           APK_URL: ${{ steps.apk.outputs.artifact-url }}
         run: |
           {
-            echo "> [!WARNING]"
-            echo "> **Before you install over an existing LoopFollow:** export its settings as a QR code"
-            echo "> (Menu → Settings → Import/Export) and keep the picture off the phone. An app signed with"
-            echo "> another key cannot update it: you would have to uninstall it, which removes its settings."
-            echo
             echo "## 📱 [Download LoopFollow $APP_VERSION]($APK_URL)"
             echo "Open this page on your phone in the web browser (not the GitHub app), tap the link, then tap the downloaded file to install."
             echo
